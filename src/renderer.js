@@ -4,6 +4,7 @@
   const toastEl = document.getElementById('toast');
   const appEl = document.getElementById('app');
   const dragRegion = document.getElementById('drag-region');
+  const dblHit = document.getElementById('dbl-hit');
 
   const hole = new BlackHole(warpCanvas, overlayCanvas);
 
@@ -11,8 +12,6 @@
   let toastTimer = null;
   let insideCircle = true;
   let currentSize = 220;
-  let dragging = false;
-  let dragOffset = null;
 
   function showToast(message, kind = 'ok', ms = 2800) {
     toastEl.hidden = false;
@@ -57,7 +56,6 @@
   }
 
   async function updateMouseIgnore(clientX, clientY) {
-    if (dragging) return;
     const over = isOverCircle(clientX, clientY);
     if (over !== insideCircle) {
       insideCircle = over;
@@ -87,53 +85,87 @@
     });
   }
 
+  async function applyDomSize(size) {
+    currentSize = size;
+    hole.setSize(size);
+    document.documentElement.style.width = size + 'px';
+    document.documentElement.style.height = size + 'px';
+    document.body.style.width = size + 'px';
+    document.body.style.height = size + 'px';
+    await window.blackhole.applyWindowSize(size);
+    await refreshMetrics();
+  }
+
   async function syncSizeFromTrash() {
     const info = await window.blackhole.getTrashSize();
     if (!info) return;
     if (info.windowSize !== currentSize) {
-      currentSize = info.windowSize;
-      await window.blackhole.applyWindowSize(currentSize);
-      hole.setSize(currentSize);
-      document.documentElement.style.width = currentSize + 'px';
-      document.documentElement.style.height = currentSize + 'px';
-      document.body.style.width = currentSize + 'px';
-      document.body.style.height = currentSize + 'px';
+      await applyDomSize(info.windowSize);
+    } else {
+      await refreshMetrics();
     }
-    await refreshMetrics();
+  }
+
+  /** Ease-out shrink + visual collapse after recycle bin emptied. */
+  async function playEmptyCollapse() {
+    const from = currentSize;
+    const target = 220;
+    const durationMs = 900;
+    const collapsePromise = hole.playCollapse(durationMs);
+
+    if (from <= target + 1) {
+      await collapsePromise;
+      await applyDomSize(target);
+      return;
+    }
+
+    await new Promise((resolve) => {
+      const start = performance.now();
+      let lastApplied = -1;
+      const tick = async (now) => {
+        const t = Math.min(1, (now - start) / durationMs);
+        const ease = 1 - Math.pow(1 - t, 3);
+        const size = Math.round(from + (target - from) * ease);
+        if (size !== lastApplied) {
+          lastApplied = size;
+          currentSize = size;
+          hole.setSize(size);
+          document.documentElement.style.width = size + 'px';
+          document.documentElement.style.height = size + 'px';
+          document.body.style.width = size + 'px';
+          document.body.style.height = size + 'px';
+          await window.blackhole.applyWindowSize(size);
+          refreshMetrics();
+        }
+        if (t < 1) {
+          requestAnimationFrame(tick);
+        } else {
+          resolve();
+        }
+      };
+      requestAnimationFrame(tick);
+    });
+
+    await collapsePromise;
+    await applyDomSize(target);
   }
 
   window.addEventListener('mousemove', (e) => {
     updateMouseIgnore(e.clientX, e.clientY);
   });
 
-  // Manual window drag (so dblclick still works)
-  dragRegion.addEventListener('mousedown', async (e) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    await window.blackhole.setIgnoreMouse(false);
-    const cursor = await window.blackhole.getCursorPoint();
-    const metrics = await window.blackhole.getWindowMetrics();
-    if (!metrics) return;
-    dragging = true;
-    dragOffset = {
-      dx: cursor.x - metrics.bounds.x,
-      dy: cursor.y - metrics.bounds.y,
-    };
-  });
+  // Native OS drag (no setPosition spam → no white title strip).
+  // Double-click empty uses a separate no-drag center hit.
+  mainWindowMovedHook();
 
-  window.addEventListener('mouseup', () => {
-    dragging = false;
-    dragOffset = null;
-  });
+  function mainWindowMovedHook() {
+    // Refresh capture mapping after native drag ends
+    window.addEventListener('mouseup', () => {
+      if (!busy) refreshMetrics();
+    });
+  }
 
-  window.addEventListener('mousemove', async () => {
-    if (!dragging || !dragOffset) return;
-    const cursor = await window.blackhole.getCursorPoint();
-    await window.blackhole.setPosition(cursor.x - dragOffset.dx, cursor.y - dragOffset.dy);
-    refreshMetrics();
-  });
-
-  dragRegion.addEventListener('dblclick', async (e) => {
+  dblHit.addEventListener('dblclick', async (e) => {
     e.preventDefault();
     e.stopPropagation();
     if (busy) return;
@@ -143,15 +175,8 @@
       if (result?.cancelled) {
         showToast('已取消', 'ok', 1200);
       } else if (result?.ok) {
-        currentSize = 220;
-        hole.setSize(220);
-        document.documentElement.style.width = '220px';
-        document.documentElement.style.height = '220px';
-        document.body.style.width = '220px';
-        document.body.style.height = '220px';
-        hole.flashSuccess();
+        await playEmptyCollapse();
         showToast('回收站已清空', 'ok');
-        await refreshMetrics();
       } else {
         hole.flashError();
         showToast(result?.error || '清空失败', 'error');
@@ -162,6 +187,11 @@
     } finally {
       busy = false;
     }
+  });
+
+  // Prevent accidental drag-start eating the first click of a double-click
+  dblHit.addEventListener('mousedown', (e) => {
+    e.stopPropagation();
   });
 
   document.addEventListener('dragenter', (e) => {
@@ -249,15 +279,20 @@
   });
 
   window.blackhole?.onTrashEmptied?.(async (result) => {
-    if (result?.ok) {
-      currentSize = 220;
-      hole.setSize(220);
-      document.documentElement.style.width = '220px';
-      document.documentElement.style.height = '220px';
-      document.body.style.width = '220px';
-      document.body.style.height = '220px';
+    if (!result?.ok) {
+      if (result?.error) showToast(result.error, 'error');
+      return;
+    }
+    if (busy) {
+      // dblclick path already animating
+      return;
+    }
+    busy = true;
+    try {
+      await playEmptyCollapse();
       showToast('回收站已清空', 'ok');
-      await refreshMetrics();
+    } finally {
+      busy = false;
     }
   });
 
@@ -267,7 +302,7 @@
   }, 250);
 
   setInterval(() => {
-    if (!busy && !dragging) syncSizeFromTrash();
+    if (!busy) syncSizeFromTrash();
   }, 2000);
 
   (async function init() {

@@ -116,6 +116,8 @@ void main() {
       this.video = null;
       this.hasDesk = false;
       this.metrics = null;
+      this._collapseSpin = 1;
+      this._collapseUntil = 0;
       this._raf = null;
       this._last = performance.now();
       this._captureError = null;
@@ -298,6 +300,24 @@ void main() {
       }, 900);
     }
 
+    /** Collapse / purge visual while window shrinks to min size. */
+    playCollapse(durationMs = 900) {
+      this.state = 'collapsing';
+      this.boost = 1;
+      this.pulse = 1.2;
+      this._collapseSpin = 4.2;
+      this._collapseUntil = performance.now() + durationMs;
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          this._collapseSpin = 1;
+          this.boost = 0.3;
+          this.pulse = 0.2;
+          this.state = 'idle';
+          resolve();
+        }, durationMs);
+      });
+    }
+
     start() {
       const loop = (now) => {
         const dt = Math.min(0.05, (now - this._last) / 1000);
@@ -320,14 +340,24 @@ void main() {
     }
 
     _update(dt) {
-      const diskBoost =
-        this.state === 'dragover' || this.state === 'swallowing' ? 2.4 + this.boost : 1 + this.boost * 0.7;
+      const collapsing = this.state === 'collapsing';
+      const diskBoost = collapsing
+        ? 3.8 * (this._collapseSpin || 1)
+        : this.state === 'dragover' || this.state === 'swallowing'
+          ? 2.4 + this.boost
+          : 1 + this.boost * 0.7;
       for (const w of this.wisps) {
         w.angle += w.omega * dt * diskBoost * (w.layer === 2 ? 1.4 : 1);
         w.phase += dt * 2;
       }
-      this.boost = Math.max(0, this.boost - dt * 0.22);
-      this.pulse = Math.max(0, this.pulse - dt * 1.1);
+      if (collapsing) {
+        // Keep energy high through collapse, slight flicker
+        this.boost = 0.85 + 0.15 * Math.sin(this.time * 18);
+        this.pulse = 0.7 + 0.5 * Math.abs(Math.sin(this.time * 12));
+      } else {
+        this.boost = Math.max(0, this.boost - dt * 0.22);
+        this.pulse = Math.max(0, this.pulse - dt * 1.1);
+      }
 
       const now = performance.now();
       for (const s of this.swallows) {
@@ -397,7 +427,11 @@ void main() {
       }
 
       const strength =
-        this.state === 'dragover' || this.state === 'swallowing' ? 1.15 : 0.72;
+        this.state === 'collapsing'
+          ? 1.45
+          : this.state === 'dragover' || this.state === 'swallowing'
+            ? 1.15
+            : 0.72;
       gl.uniform1f(this.uniforms.horizon, this.horizon + this.pulse * 3);
       gl.uniform1f(this.uniforms.strength, strength);
       gl.uniform1f(this.uniforms.twist, 1.25);

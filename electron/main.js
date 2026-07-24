@@ -52,9 +52,10 @@ function saveConfig(partial) {
 
 function sizeFromTrashBytes(bytes) {
   const n = Math.max(0, Number(bytes) || 0);
-  const maxBytes = 10 * 1024 * 1024 * 1024; // 10GB → max
-  const t = Math.min(1, Math.log10(n + 1) / Math.log10(maxBytes + 1));
-  return Math.round(SIZE_MIN + (SIZE_MAX - SIZE_MIN) * t);
+  const GB = 1024 * 1024 * 1024;
+  const steps = Math.floor(n / GB); // 每满 1GB 一阶
+  const size = Math.round(SIZE_MIN * Math.pow(1.1, steps));
+  return Math.min(SIZE_MAX, Math.max(SIZE_MIN, size));
 }
 
 function defaultBounds(size = SIZE_MIN) {
@@ -158,9 +159,16 @@ function createWindow() {
     title: '',
     frame: false,
     transparent: true,
+    thickFrame: false,
+    roundedCorners: false,
+    // Avoid Windows DWM caption/chrome flash while moving transparent windows
+    type: process.platform === 'win32' ? 'toolbar' : undefined,
     alwaysOnTop,
     skipTaskbar: true,
     resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
     hasShadow: false,
     backgroundColor: '#00000000',
     show: false,
@@ -174,6 +182,7 @@ function createWindow() {
 
   mainWindow.setAlwaysOnTop(alwaysOnTop, 'screen-saver');
   mainWindow.setTitle('');
+  mainWindow.setBackgroundColor('#00000000');
   try {
     mainWindow.setContentProtection(true);
   } catch {
@@ -187,6 +196,7 @@ function createWindow() {
   });
 
   mainWindow.once('ready-to-show', () => {
+    mainWindow.setBackgroundColor('#00000000');
     mainWindow.show();
   });
 
@@ -361,11 +371,8 @@ ipcMain.handle('empty-trash', async () => {
     detail: '将永久删除回收站中的所有项目，黑洞会回到初始大小。',
   });
   if (response !== 0) return { ok: false, cancelled: true };
-  const result = await emptyTrash();
-  if (result.ok) {
-    setWindowSizeCentered(SIZE_MIN);
-  }
-  return result;
+  // 尺寸复位由渲染进程播放塌缩动画完成
+  return emptyTrash();
 });
 
 ipcMain.handle('apply-window-size', (_event, size) => {
@@ -398,7 +405,17 @@ ipcMain.handle('set-ignore-mouse', (_event, ignore) => {
 
 ipcMain.handle('set-position', (_event, x, y) => {
   if (!mainWindow) return;
-  mainWindow.setPosition(Math.round(x), Math.round(y));
+  // Use setBounds with same size to avoid transient resize/chrome flash
+  const b = mainWindow.getBounds();
+  mainWindow.setBounds(
+    {
+      x: Math.round(x),
+      y: Math.round(y),
+      width: b.width,
+      height: b.height,
+    },
+    false
+  );
 });
 
 ipcMain.handle('get-cursor-point', () => screen.getCursorScreenPoint());
@@ -428,7 +445,6 @@ ipcMain.handle('show-context-menu', () => {
         });
         if (response === 0) {
           const result = await emptyTrash();
-          if (result.ok) setWindowSizeCentered(SIZE_MIN);
           mainWindow.webContents.send('trash-emptied', result);
         }
       },
