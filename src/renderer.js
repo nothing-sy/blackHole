@@ -4,7 +4,6 @@
   const toastEl = document.getElementById('toast');
   const appEl = document.getElementById('app');
   const dragRegion = document.getElementById('drag-region');
-  const dblHit = document.getElementById('dbl-hit');
 
   const hole = new BlackHole(warpCanvas, overlayCanvas);
 
@@ -12,6 +11,10 @@
   let toastTimer = null;
   let insideCircle = true;
   let currentSize = 220;
+  let dragging = false;
+  let dragOffset = null;
+  let dragRaf = null;
+  let lastClickAt = 0;
 
   function showToast(message, kind = 'ok', ms = 2800) {
     toastEl.hidden = false;
@@ -56,6 +59,7 @@
   }
 
   async function updateMouseIgnore(clientX, clientY) {
+    if (dragging) return;
     const over = isOverCircle(clientX, clientY);
     if (over !== insideCircle) {
       insideCircle = over;
@@ -66,7 +70,6 @@
   async function refreshMetrics() {
     const m = await window.blackhole.getWindowMetrics();
     if (!m) return;
-    // Convert DIP → physical pixels for capture mapping
     const s = m.scaleFactor || 1;
     hole.setMetrics({
       bounds: {
@@ -106,7 +109,6 @@
     }
   }
 
-  /** Ease-out shrink + visual collapse after recycle bin emptied. */
   async function playEmptyCollapse() {
     const from = currentSize;
     const target = 220;
@@ -137,11 +139,8 @@
           await window.blackhole.applyWindowSize(size);
           refreshMetrics();
         }
-        if (t < 1) {
-          requestAnimationFrame(tick);
-        } else {
-          resolve();
-        }
+        if (t < 1) requestAnimationFrame(tick);
+        else resolve();
       };
       requestAnimationFrame(tick);
     });
@@ -150,24 +149,7 @@
     await applyDomSize(target);
   }
 
-  window.addEventListener('mousemove', (e) => {
-    updateMouseIgnore(e.clientX, e.clientY);
-  });
-
-  // Native OS drag (no setPosition spam → no white title strip).
-  // Double-click empty uses a separate no-drag center hit.
-  mainWindowMovedHook();
-
-  function mainWindowMovedHook() {
-    // Refresh capture mapping after native drag ends
-    window.addEventListener('mouseup', () => {
-      if (!busy) refreshMetrics();
-    });
-  }
-
-  dblHit.addEventListener('dblclick', async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
+  async function emptyByDoubleClick() {
     if (busy) return;
     busy = true;
     try {
@@ -187,11 +169,57 @@
     } finally {
       busy = false;
     }
+  }
+
+  window.addEventListener('mousemove', (e) => {
+    updateMouseIgnore(e.clientX, e.clientY);
   });
 
-  // Prevent accidental drag-start eating the first click of a double-click
-  dblHit.addEventListener('mousedown', (e) => {
-    e.stopPropagation();
+  // Manual drag (reliable on Windows transparent windows)
+  dragRegion.addEventListener('mousedown', async (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+
+    const now = performance.now();
+    if (now - lastClickAt < 320) {
+      lastClickAt = 0;
+      await emptyByDoubleClick();
+      return;
+    }
+    lastClickAt = now;
+
+    await window.blackhole.setIgnoreMouse(false);
+    insideCircle = true;
+    const cursor = await window.blackhole.getCursorPoint();
+    const metrics = await window.blackhole.getWindowMetrics();
+    if (!metrics) return;
+    dragging = true;
+    dragOffset = {
+      dx: cursor.x - metrics.bounds.x,
+      dy: cursor.y - metrics.bounds.y,
+    };
+  });
+
+  window.addEventListener('mouseup', async () => {
+    if (!dragging) return;
+    dragging = false;
+    dragOffset = null;
+    if (dragRaf) {
+      cancelAnimationFrame(dragRaf);
+      dragRaf = null;
+    }
+    await refreshMetrics();
+  });
+
+  window.addEventListener('mousemove', () => {
+    if (!dragging || !dragOffset) return;
+    if (dragRaf) return;
+    dragRaf = requestAnimationFrame(async () => {
+      dragRaf = null;
+      if (!dragging || !dragOffset) return;
+      const cursor = await window.blackhole.getCursorPoint();
+      await window.blackhole.setPosition(cursor.x - dragOffset.dx, cursor.y - dragOffset.dy);
+    });
   });
 
   document.addEventListener('dragenter', (e) => {
@@ -283,10 +311,7 @@
       if (result?.error) showToast(result.error, 'error');
       return;
     }
-    if (busy) {
-      // dblclick path already animating
-      return;
-    }
+    if (busy) return;
     busy = true;
     try {
       await playEmptyCollapse();
@@ -296,13 +321,12 @@
     }
   });
 
-  // Keep metrics in sync while moving / resizing
   setInterval(() => {
     refreshMetrics();
   }, 250);
 
   setInterval(() => {
-    if (!busy) syncSizeFromTrash();
+    if (!busy && !dragging) syncSizeFromTrash();
   }, 2000);
 
   (async function init() {

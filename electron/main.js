@@ -161,8 +161,6 @@ function createWindow() {
     transparent: true,
     thickFrame: false,
     roundedCorners: false,
-    // Avoid Windows DWM caption/chrome flash while moving transparent windows
-    type: process.platform === 'win32' ? 'toolbar' : undefined,
     alwaysOnTop,
     skipTaskbar: true,
     resizable: false,
@@ -170,7 +168,9 @@ function createWindow() {
     minimizable: false,
     fullscreenable: false,
     hasShadow: false,
-    backgroundColor: '#00000000',
+    // Fully transparent #00000000 causes a white strip on Windows blur/focus;
+    // nearly-clear black keeps DWM compositing stable.
+    backgroundColor: '#00000001',
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -182,7 +182,7 @@ function createWindow() {
 
   mainWindow.setAlwaysOnTop(alwaysOnTop, 'screen-saver');
   mainWindow.setTitle('');
-  mainWindow.setBackgroundColor('#00000000');
+  mainWindow.setBackgroundColor('#00000001');
   try {
     mainWindow.setContentProtection(true);
   } catch {
@@ -195,10 +195,20 @@ function createWindow() {
     mainWindow.setTitle('');
   });
 
+  const paintTransparent = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.setBackgroundColor('#00000001');
+  };
+
   mainWindow.once('ready-to-show', () => {
-    mainWindow.setBackgroundColor('#00000000');
+    paintTransparent();
     mainWindow.show();
+    paintTransparent();
   });
+
+  mainWindow.on('blur', paintTransparent);
+  mainWindow.on('focus', paintTransparent);
+  mainWindow.on('show', paintTransparent);
 
   mainWindow.on('moved', () => {
     if (!mainWindow) return;

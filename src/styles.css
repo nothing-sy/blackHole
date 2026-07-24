@@ -9,8 +9,8 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: rgba(0, 0, 0, 0);
-  background-color: transparent;
+  background: transparent;
+  background-color: rgba(0, 0, 0, 0);
   user-select: none;
   font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
 }
@@ -48,31 +48,17 @@ body {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 36%;
-  height: 36%;
+  width: 34%;
+  height: 34%;
   transform: translate(-50%, -50%);
   border-radius: 50%;
   z-index: 3;
   cursor: grab;
-  -webkit-app-region: drag;
+  -webkit-app-region: no-drag;
 }
 
 #drag-region:active {
   cursor: grabbing;
-}
-
-/* Center hit for double-click empty (drag regions ignore click events) */
-#dbl-hit {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 18%;
-  height: 18%;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  z-index: 4;
-  -webkit-app-region: no-drag;
-  cursor: pointer;
 }
 
 #toast {
