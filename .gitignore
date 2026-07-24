@@ -5,3 +5,4 @@ out/
 .DS_Store
 Thumbs.db
 user-data/
+.code-review-graph/
