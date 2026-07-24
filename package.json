@@ -1,0 +1,47 @@
+{
+  "name": "desktop-blackhole",
+  "version": "1.0.0",
+  "description": "Floating desktop black hole that sends dropped files to the Recycle Bin",
+  "main": "electron/main.js",
+  "author": "DesktopBlackHole",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win"
+  },
+  "build": {
+    "appId": "com.desktopblackhole.app",
+    "productName": "DesktopBlackHole",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        },
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^25.1.8"
+  }
+}

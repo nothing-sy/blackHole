@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; media-src 'self' blob:; img-src 'self' data: blob:; connect-src 'self'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title></title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="warp" width="220" height="220"></canvas>
+      <canvas id="hole" width="220" height="220"></canvas>
+      <div id="drag-region" title="拖动 · 拖入文件 · 双击清空回收站"></div>
+      <div id="toast" hidden></div>
+    </div>
+    <script src="blackhole.js"></script>
+    <script src="renderer.js"></script>
+  </body>
+</html>

@@ -1,0 +1,89 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  user-select: none;
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+#app {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+#warp,
+#hole {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+}
+
+#warp {
+  z-index: 0;
+}
+
+#hole {
+  z-index: 1;
+  pointer-events: none;
+}
+
+#drag-region {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 28%;
+  height: 28%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  z-index: 3;
+  cursor: grab;
+}
+
+#drag-region:active {
+  cursor: grabbing;
+}
+
+#toast {
+  position: absolute;
+  left: 50%;
+  bottom: 12%;
+  transform: translateX(-50%);
+  max-width: 70%;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(12, 10, 18, 0.88);
+  color: #f3e8d8;
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: center;
+  pointer-events: none;
+  z-index: 5;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+#toast[hidden] {
+  display: none;
+}
+
+#toast.error {
+  color: #ffb4a8;
+}
+
+#toast.ok {
+  color: #c8f0d8;
+}
